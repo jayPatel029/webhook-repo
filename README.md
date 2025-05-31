@@ -1,4 +1,4 @@
-# GitHub PR Tracker
+# GitHub Webhook Project
 
 ## 🚀 Project Overview
 
