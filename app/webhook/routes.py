@@ -2,11 +2,11 @@
 
 from flask import Blueprint, request, jsonify
 from app.extensions import events_collection
-from datetime import datetime, timedelta
-import dateutil.parser  # Handles ISO timestamp parsing
 
+# define webhook blueprint 
 webhook_bp = Blueprint('webhook', __name__)
 
+# this route will handle github webhook post requests
 @webhook_bp.route('/webhook', methods=['POST'])
 def webhook():
     event_type = request.headers.get('X-GitHub-Event')
@@ -15,9 +15,11 @@ def webhook():
     if not event_type or not payload:
         return jsonify({'error': 'Invalid webhook'}), 400
 
-    print(f"received: {payload}")  # Fix $ -> correct variable
+    # print(f"received: {payload}") 
     event_data = {}
 
+    # handle events based on action_type
+    # push event
     if event_type == "push":
         head_commit = payload.get('head_commit', {})
         commits = payload.get('commits', [])
@@ -28,7 +30,8 @@ def webhook():
         event_data['from_branch'] = None
         event_data['to_branch'] = payload['ref'].split('/')[-1]
         event_data['request_id'] = head_commit.get('id')
-
+   
+    # pull _requests events (open/close)
     elif event_type == "pull_request":
         pr_data = payload.get('pull_request', {})
         pr_action = payload.get('action')  # e.g., opened, closed, edited
@@ -39,13 +42,14 @@ def webhook():
         event_data['to_branch'] = pr_data.get('base', {}).get('ref')
         event_data['request_id'] = pr_data.get('id')
 
-        # Special case for merges
+        # check if pull_request was merged
         if pr_data.get('merge'):
             event_data['action_type'] = "merge"
             event_data['timestamp'] = pr_data.get('merged_at')
         else:
             event_data['action_type'] = f"pull_request_{pr_action}"  # e.g., pull_request_opened
-
+    
+    # Ignore unsupported event types
     else:
         return jsonify({'status': f'Ignored event type: {event_type}'}), 200
 
@@ -54,63 +58,7 @@ def webhook():
 
     return jsonify({'status': 'success'}), 200
 
-
-# @webhook_bp.route('/events', methods=['GET'])
-# def get_events():
-#     try:
-#         # Fetch events sorted by most recent timestamp
-#         events_cursor = events_collection.find().sort("timestamp", -1)
-        
-#         # Convert MongoDB cursor to a list of dicts
-#         events = []
-#         for event in events_cursor:
-#             event['_id'] = str(event['_id'])  # Convert ObjectId to string
-#             events.append(event)
-        
-#         return jsonify(events), 200
-#     except Exception as e:
-#         return jsonify({"error": "Could not fetch events", "details": str(e)}), 500
-
-
-
-# @webhook_bp.route('/events', methods=['GET'])
-# def get_events():
-#     try:
-#         query = {}
-
-#         last_seen = request.args.get('last_seen')
-#         if last_seen:
-#             try:
-#                 last_seen_dt = dateutil.parser.isoparse(last_seen)
-#                 query['timestamp'] = {'$gt': last_seen_dt}
-#             except ValueError:
-#                 return jsonify({"error": "Invalid last_seen timestamp format"}), 400
-
-#         minutes_window = request.args.get('window_minutes')
-#         if minutes_window:
-#             try:
-#                 window_dt = datetime.utcnow() - timedelta(minutes=int(minutes_window))
-#                 if 'timestamp' in query:
-#                     query['timestamp']['$gte'] = window_dt
-#                 else:
-#                     query['timestamp'] = {'$gte': window_dt}
-#             except ValueError:
-#                 return jsonify({"error": "Invalid window_minutes"}), 400
-
-#         # Fetch filtered events and sort oldest to newest
-#         events_cursor = events_collection.find(query)
-
-#         events = []
-#         for event in events_cursor:
-#             event['_id'] = str(event['_id'])  # Convert ObjectId to string
-#             events.append(event)
-
-#         return jsonify(events), 200
-
-#     except Exception as e:
-#         return jsonify({"error": "Could not fetch events", "details": str(e)}), 500
-
-
+# route to fetch all stored events
 @webhook_bp.route('/events', methods=['GET'])
 def get_events():
     try:
@@ -126,7 +74,7 @@ def get_events():
     except Exception as e:
         return jsonify({"error": "Could not fetch events", "details": str(e)}), 500
 
-
+# Route to check the status of the API and MongoDB
 @webhook_bp.route('/status', methods=['GET'])
 def status():
     try:
@@ -136,6 +84,7 @@ def status():
         return jsonify({"status": "error", "details": str(e)}), 500
 
 
+# init route
 @webhook_bp.route('/', methods=['GET'])
 def welcome():
     return jsonify({"message": "webhook API is running!"}), 200
