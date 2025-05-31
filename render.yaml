@@ -3,7 +3,7 @@ services:
     name: github-webhook-flask
     runtime: python
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "gunicorn run:app"
+    startCommand: "gunicorn run:app --timeout 60"
     envVars:
       - key: MONGO_URI
         value: mongodb+srv://jaypatel:jay1234@cluster0.42iqh5i.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0
