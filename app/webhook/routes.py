@@ -2,6 +2,8 @@
 
 from flask import Blueprint, request, jsonify
 from app.extensions import events_collection
+from datetime import datetime, timedelta
+import dateutil.parser  # Handles ISO timestamp parsing
 
 webhook_bp = Blueprint('webhook', __name__)
 
@@ -50,19 +52,60 @@ def webhook():
     return jsonify({'status': 'success'}), 200
 
 
+# @webhook_bp.route('/events', methods=['GET'])
+# def get_events():
+#     try:
+#         # Fetch events sorted by most recent timestamp
+#         events_cursor = events_collection.find().sort("timestamp", -1)
+        
+#         # Convert MongoDB cursor to a list of dicts
+#         events = []
+#         for event in events_cursor:
+#             event['_id'] = str(event['_id'])  # Convert ObjectId to string
+#             events.append(event)
+        
+#         return jsonify(events), 200
+#     except Exception as e:
+#         return jsonify({"error": "Could not fetch events", "details": str(e)}), 500
+
+
+
 @webhook_bp.route('/events', methods=['GET'])
 def get_events():
     try:
-        # Fetch events sorted by most recent timestamp
-        events_cursor = events_collection.find().sort("timestamp", -1)
-        
-        # Convert MongoDB cursor to a list of dicts
+        query = {}
+
+        # Optional: filter by last seen timestamp
+        last_seen = request.args.get('last_seen')
+        if last_seen:
+            try:
+                last_seen_dt = dateutil.parser.isoparse(last_seen)
+                query['timestamp'] = {'$gt': last_seen_dt}
+            except ValueError:
+                return jsonify({"error": "Invalid last_seen timestamp format"}), 400
+
+        # Optional: restrict to last 10 minutes (configurable)
+        minutes_window = request.args.get('window_minutes')
+        if minutes_window:
+            try:
+                window_dt = datetime.utcnow() - timedelta(minutes=int(minutes_window))
+                if 'timestamp' in query:
+                    query['timestamp']['$gte'] = window_dt
+                else:
+                    query['timestamp'] = {'$gte': window_dt}
+            except ValueError:
+                return jsonify({"error": "Invalid window_minutes"}), 400
+
+        # Fetch filtered events and sort oldest to newest
+        events_cursor = events_collection.find(query)
+
         events = []
         for event in events_cursor:
             event['_id'] = str(event['_id'])  # Convert ObjectId to string
             events.append(event)
-        
+
         return jsonify(events), 200
+
     except Exception as e:
         return jsonify({"error": "Could not fetch events", "details": str(e)}), 500
 
@@ -71,8 +114,12 @@ def get_events():
 @webhook_bp.route('/status', methods=['GET'])
 def status():
     try:
-        # Just a dummy read to verify connection
-        events_collection.find_one()
-        return jsonify({'status': 'MongoDB connected'}), 200
+        db_stats = events_collection.count_documents({})
+        return jsonify({"status": "ok", "events_count": db_stats}), 200
     except Exception as e:
-        return jsonify({'status': 'MongoDB error', 'error': str(e)}), 500
+        return jsonify({"status": "error", "details": str(e)}), 500
+
+
+@webhook_bp.route('/', methods=['GET'])
+def welcome():
+    return jsonify({"message": "webhook API is running!"}), 200
